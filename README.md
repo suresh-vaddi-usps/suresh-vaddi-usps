@@ -15,7 +15,7 @@ You can click the Preview link to take a look at your changes.
 
 ### Resend Open Workflow Notifications
 
-This repository includes a workflow that monitors and resends notifications for open (in-progress, queued, or waiting) GitHub Actions workflows.
+This repository includes a workflow that monitors open (in-progress, queued, or waiting) GitHub Actions workflows and sends notifications about their current status.
 
 **Features:**
 - 🔄 Automatically monitors workflow runs
@@ -23,6 +23,7 @@ This repository includes a workflow that monitors and resends notifications for 
 - ⏰ Scheduled checks every 6 hours
 - 🎯 Manual triggering with filtering options
 - 📊 Detailed summary reports
+- 🔔 Sends status notifications for open workflows
 
 **How to Use:**
 
@@ -37,4 +38,4 @@ This repository includes a workflow that monitors and resends notifications for 
 - Identifies workflows that are currently open (not completed)
 - Logs detailed information about each open workflow
 - Creates a summary table in the job output
-- Sends notifications about the current status
+- Sends status notifications via GitHub Actions notices and job summaries

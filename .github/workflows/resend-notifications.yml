@@ -154,9 +154,9 @@ jobs:
 
             // Create a summary
             await core.summary
-              .addHeading('Open Workflow Notifications Resent')
+              .addHeading('Open Workflow Status Report')
               .addRaw(
-                `Found and processed ${openRuns.length} open workflow run(s)`,
+                `Found and reported on ${openRuns.length} open workflow run(s)`,
                 true)
               .addBreak()
               .addTable([
@@ -178,7 +178,7 @@ jobs:
               .write();
 
             const successMsg =
-              `✅ Successfully resent notifications for ` +
+              `✅ Successfully sent notifications about ` +
               `${openRuns.length} open workflow runs`;
             console.log(successMsg);
 
