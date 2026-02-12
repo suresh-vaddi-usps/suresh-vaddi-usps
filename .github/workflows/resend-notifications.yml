@@ -1,0 +1,192 @@
+# Workflow to resend notifications for open workflows
+name: Resend Open Workflow Notifications
+
+# Controls when the workflow will run
+on:
+  # Allows manual trigger from the Actions tab to resend notifications on demand
+  workflow_dispatch:
+    inputs:
+      workflow_name:
+        description: 'Specific workflow name to check (leave empty for all)'
+        required: false
+        type: string
+      notification_type:
+        description: 'Type of notification to send'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - in_progress
+          - queued
+          - waiting
+
+  # Trigger on workflow run events to monitor active workflows
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - requested
+      - in_progress
+      - completed
+
+  # Schedule to periodically check for open workflows
+  schedule:
+    # Run every 6 hours to check for stuck or open workflows
+    - cron: '0 */6 * * *'
+
+jobs:
+  resend-notifications:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get open workflow runs
+        id: get-workflows
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Get workflow runs that are currently open/active
+            const { data: workflowRuns } =
+              await github.rest.actions.listWorkflowRunsForRepo({
+              owner,
+              repo,
+              status: 'in_progress',
+              per_page: 100
+            });
+
+            // Also get queued workflows
+            const { data: queuedRuns } =
+              await github.rest.actions.listWorkflowRunsForRepo({
+              owner,
+              repo,
+              status: 'queued',
+              per_page: 100
+            });
+
+            // Also get waiting workflows
+            const { data: waitingRuns } =
+              await github.rest.actions.listWorkflowRunsForRepo({
+              owner,
+              repo,
+              status: 'waiting',
+              per_page: 100
+            });
+
+            const allOpenRuns = [
+              ...workflowRuns.workflow_runs,
+              ...queuedRuns.workflow_runs,
+              ...waitingRuns.workflow_runs
+            ];
+
+            console.log(`Found ${allOpenRuns.length} open workflow runs`);
+
+            // Filter by workflow name if specified
+            const workflowName = '${{ inputs.workflow_name }}';
+            let filteredRuns = allOpenRuns;
+            if (workflowName) {
+              filteredRuns =
+                allOpenRuns.filter(run => run.name === workflowName);
+              const msg =
+                `Filtered to ${filteredRuns.length} runs for workflow: ` +
+                `${workflowName}`;
+              console.log(msg);
+            }
+
+            // Filter by notification type if specified
+            const notificationType =
+              '${{ inputs.notification_type }}' || 'all';
+            if (notificationType !== 'all') {
+              filteredRuns =
+                filteredRuns.filter(run => run.status === notificationType);
+              const msg2 =
+                `Filtered to ${filteredRuns.length} runs with status: ` +
+                `${notificationType}`;
+              console.log(msg2);
+            }
+
+            return filteredRuns;
+
+      - name: Process and resend notifications
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const openRuns = ${{ steps.get-workflows.outputs.result }};
+
+            if (!openRuns || openRuns.length === 0) {
+              console.log('No open workflow runs found to notify about.');
+              return;
+            }
+
+            console.log(`Processing ${openRuns.length} open workflow runs...`);
+
+            for (const run of openRuns) {
+              const runInfo = {
+                workflow: run.name,
+                status: run.status,
+                conclusion: run.conclusion || 'pending',
+                url: run.html_url,
+                created_at: run.created_at,
+                updated_at: run.updated_at,
+                run_number: run.run_number,
+                event: run.event,
+                head_branch: run.head_branch,
+                head_sha: run.head_sha.substring(0, 7)
+              };
+
+              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+              console.log(`📋 Workflow Notification`);
+              console.log(`   Name: ${runInfo.workflow}`);
+              console.log(`   Status: ${runInfo.status.toUpperCase()}`);
+              console.log(`   Run #: ${runInfo.run_number}`);
+              console.log(`   Branch: ${runInfo.head_branch}`);
+              console.log(`   Commit: ${runInfo.head_sha}`);
+              console.log(`   Event: ${runInfo.event}`);
+              console.log(`   Started: ${runInfo.created_at}`);
+              console.log(`   Updated: ${runInfo.updated_at}`);
+              console.log(`   URL: ${runInfo.url}`);
+              console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            }
+
+            // Create a summary
+            await core.summary
+              .addHeading('Open Workflow Status Report')
+              .addRaw(
+                `Found and reported on ${openRuns.length} open workflow run(s)`,
+                true)
+              .addBreak()
+              .addTable([
+                [
+                  {data: 'Workflow', header: true},
+                  {data: 'Status', header: true},
+                  {data: 'Run #', header: true},
+                  {data: 'Branch', header: true},
+                  {data: 'Link', header: true}
+                ],
+                ...openRuns.map(run => [
+                  run.name,
+                  run.status,
+                  run.run_number.toString(),
+                  run.head_branch,
+                  `<a href="${run.html_url}">View Run</a>`
+                ])
+              ])
+              .write();
+
+            const successMsg =
+              `✅ Successfully sent notifications about ` +
+              `${openRuns.length} open workflow runs`;
+            console.log(successMsg);
+
+      - name: Send notification summary
+        if: always()
+        run: |
+          echo "::notice title=Workflow Notifications::Resend operation \
+          completed. Check job summary for details."
